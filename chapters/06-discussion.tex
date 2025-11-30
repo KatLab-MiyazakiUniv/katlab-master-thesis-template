@@ -25,10 +25,10 @@ LaTeX では章番号が自動的に付与される。
 LaTeX では以下の階層構造が使用できる：
 
 \begin{enumerate}
-  \item \verb|\chapter{}|: 章
-  \item \verb|\section{}|: 節
-  \item \verb|\subsection{}|: 小節
-  \item \verb|\subsubsection{}|: 小小節
+  \item \verb|\chapter{}|: 章 (1, 2, 3, ...)
+  \item \verb|\section{}|: 節 (1.1, 1.2, 1.3, ...)
+  \item \verb|\subsection{}|: 小節 (1.1.1, 1.1.2, 1.1.3, ...)
+  \item \verb|\subsubsection{}|: 小小節 (1.1.1.1, 1.1.1.2, 1.1.1.3, ...)
 \end{enumerate}
 
 \subsection{適切な階層の選択}
@@ -43,17 +43,21 @@ LaTeX では以下の階層構造が使用できる：
 
 \section{論文の一般的な構成}
 
-修士論文の一般的な構成は以下の通りである：
+片山徹郎研究室で主に使われてきた、修士論文の一般的な構成は以下の通りである：
 
 \begin{enumerate}
   \item はじめに
-  \item 研究の準備（背景、関連研究）
-  \item 提案手法・システムの機能
+  \item 研究の準備（使用ツール、ライブラリの紹介）
+  \item 機能
   \item 実装
-  \item 評価・適用例
+  \item 適用例
   \item 考察
   \item おわりに（まとめと今後の課題）
 \end{enumerate}
+
+この構成が全てではなく、研究内容に合わせて適宜変更されることが多い。
+例えば、卒業論文で開発したツールの拡張を行う場合は、拡張した箇所の説明を追加することが多い。
+詳細な構成などは、片山研の \verb|graduate| フォルダにある論文を参考にすると良い。
 
 \section{本テンプレートの構成}
 
