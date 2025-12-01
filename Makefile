@@ -134,12 +134,44 @@ watch-chapters: ## chapters内のファイル変更を監視してpaper.texを�
 	if command -v fswatch > /dev/null 2>&1; then \
 		fswatch -o chapters paper.tex paper.bib | while read; do \
 			echo "ファイル変更を検知しました。コンパイルを開始します..."; \
-			$(MAKE) paper.pdf || echo "[ERROR] コンパイルに失敗しました"; \
+			retry_count=0; \
+			while [ $$retry_count -lt 3 ]; do \
+				if $(MAKE) paper.pdf; then \
+					echo "コンパイルに成功しました"; \
+					break; \
+				else \
+					retry_count=$$((retry_count + 1)); \
+					echo "[ERROR] コンパイルに失敗しました (試行 $$retry_count/3)"; \
+					if [ $$retry_count -lt 3 ]; then \
+						echo "クリーンアップして再試行します..."; \
+						$(MAKE) clean-all; \
+						sleep 1; \
+					else \
+						echo "[ERROR] 3回試行しましたが失敗しました。ファイル監視を継続します。"; \
+					fi; \
+				fi; \
+			done; \
 		done; \
 	elif command -v inotifywait > /dev/null 2>&1; then \
 		while inotifywait -e modify,create,delete -r chapters paper.tex paper.bib 2>/dev/null; do \
 			echo "ファイル変更を検知しました。コンパイルを開始します..."; \
-			$(MAKE) paper.pdf || echo "[ERROR] コンパイルに失敗しました"; \
+			retry_count=0; \
+			while [ $$retry_count -lt 3 ]; do \
+				if $(MAKE) paper.pdf; then \
+					echo "コンパイルに成功しました"; \
+					break; \
+				else \
+					retry_count=$$((retry_count + 1)); \
+					echo "[ERROR] コンパイルに失敗しました (試行 $$retry_count/3)"; \
+					if [ $$retry_count -lt 3 ]; then \
+						echo "クリーンアップして再試行します..."; \
+						$(MAKE) clean-all; \
+						sleep 1; \
+					else \
+						echo "[ERROR] 3回試行しましたが失敗しました。ファイル監視を継続します。"; \
+					fi; \
+				fi; \
+			done; \
 		done; \
 	else \
 		last_time=$$(find chapters paper.tex paper.bib -type f \( -name "*.tex" -o -name "*.bib" \) 2>/dev/null | \
@@ -153,7 +185,23 @@ watch-chapters: ## chapters内のファイル変更を監視してpaper.texを�
 				xargs stat -c "%Y" 2>/dev/null | sort -n | tail -1 || echo 0); \
 			if [ "$$current_time" != "$$last_time" ]; then \
 				echo "ファイル変更を検知しました。コンパイルを開始します..."; \
-				$(MAKE) paper.pdf || echo "[ERROR] コンパイルに失敗しました"; \
+				retry_count=0; \
+				while [ $$retry_count -lt 3 ]; do \
+					if $(MAKE) paper.pdf; then \
+						echo "コンパイルに成功しました"; \
+						break; \
+					else \
+						retry_count=$$((retry_count + 1)); \
+						echo "[ERROR] コンパイルに失敗しました (試行 $$retry_count/3)"; \
+						if [ $$retry_count -lt 3 ]; then \
+							echo "クリーンアップして再試行します..."; \
+							$(MAKE) clean-all; \
+							sleep 1; \
+						else \
+							echo "[ERROR] 3回試行しましたが失敗しました。ファイル監視を継続します。"; \
+						fi; \
+					fi; \
+				done; \
 				last_time=$$current_time; \
 			fi; \
 			sleep 1; \
