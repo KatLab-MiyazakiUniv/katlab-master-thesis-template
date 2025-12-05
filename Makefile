@@ -4,15 +4,31 @@
 MAIN_TEX = paper.tex
 OUTPUT_PDF = paper.pdf
 
-# 既存の監視スクリプトのみを終了（makeプロセスには触れない）
+# 既存の監視スクリプトのみを終了（PIDファイルベース）
 define kill_watch_processes
 	@echo "既存の監視プロセスをチェック中..."
 	@if [ "$(IN_DEVCONTAINER)" = "1" ]; then \
-		pkill -f "scripts/watch.sh" 2>/dev/null || true; \
+		if [ -f .watch.pid ]; then \
+			OLD_PID=$$(cat .watch.pid 2>/dev/null); \
+			if [ -n "$$OLD_PID" ] && kill -0 $$OLD_PID 2>/dev/null; then \
+				echo "監視プロセス (PID: $$OLD_PID) を終了します..."; \
+				kill $$OLD_PID 2>/dev/null || true; \
+				sleep 0.5; \
+			fi; \
+			rm -f .watch.pid; \
+		fi; \
 	else \
-		$(DOCKER_PREFIX) pkill -f "scripts/watch.sh" 2>/dev/null || true; \
+		$(DOCKER_PREFIX) bash -c '\
+			if [ -f /workspace/.watch.pid ]; then \
+				OLD_PID=$$(cat /workspace/.watch.pid 2>/dev/null); \
+				if [ -n "$$OLD_PID" ] && kill -0 $$OLD_PID 2>/dev/null; then \
+					echo "監視プロセス (PID: $$OLD_PID) を終了します..."; \
+					kill $$OLD_PID 2>/dev/null || true; \
+					sleep 0.5; \
+				fi; \
+				rm -f /workspace/.watch.pid; \
+			fi'; \
 	fi
-	@sleep 0.5
 endef
 
 # 実行環境の判定

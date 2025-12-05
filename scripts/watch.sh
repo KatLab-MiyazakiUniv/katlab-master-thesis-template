@@ -34,6 +34,7 @@ log_debug() {
 MAIN_TEX="paper.tex"
 WATCH_DIR="chapters"
 BUILD_DIR="build"
+PID_FILE="$WORKSPACE/.watch.pid"
 
 # Compile paper.tex using latexmk
 compile_paper() {
@@ -65,8 +66,31 @@ compile_paper() {
 # コンパイル進行中フラグ
 compilation_in_progress=0
 
+# クリーンアップ関数
+cleanup() {
+  log_info "Watch stopped"
+  rm -f "$PID_FILE"
+  exit 0
+}
+
 # シグナルハンドリング
-trap 'log_info "Watch stopped"; exit 0' SIGINT SIGTERM
+trap cleanup SIGINT SIGTERM EXIT
+
+# PID ファイルをチェック（既存プロセスの確認）
+if [[ -f "$PID_FILE" ]]; then
+  old_pid=$(cat "$PID_FILE" 2>/dev/null)
+  if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
+    log_warn "Watch process already running (PID: $old_pid)"
+    log_warn "Terminating old process..."
+    kill "$old_pid" 2>/dev/null || true
+    sleep 0.5
+  fi
+  rm -f "$PID_FILE"
+fi
+
+# 現在のプロセスの PID を記録
+echo $$ > "$PID_FILE"
+log_info "Watch process started (PID: $$)"
 
 log_info "Using polling method for Docker mount compatibility"
 log_info "Watching: ${WATCH_DIR}/**/*.tex"
