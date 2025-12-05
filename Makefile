@@ -1,8 +1,8 @@
-.PHONY: help build up down exec clean compile watch pdf stop logs kill-make
+.PHONY: help build up down exec clean clean-all watch-chapters open-pdf setup dev restart rebuild stop logs paper.pdf kill-make
 
-# TeXファイルのリストを取得（サブディレクトリも含む）
-TEX_FILES := $(shell find src -name "*.tex" -type f)
-PDF_FILES := $(patsubst src/%.tex,pdf/%.pdf,$(TEX_FILES))
+# メインTeXファイル
+MAIN_TEX = paper.tex
+OUTPUT_PDF = paper.pdf
 
 # プロセス管理関数
 define kill_existing_make_processes
@@ -23,57 +23,31 @@ define kill_existing_make_processes
 endef
 
 # 実行環境の判定
-IN_DEVCONTAINER := $(shell test -f /.dockerenv && test -f /workspace/.devcontainer/devcontainer.json && echo 1 || echo 0)
+IN_DEVCONTAINER := $(shell test -f /.dockerenv && test -f .devcontainer/devcontainer.json && echo 1 || echo 0)
 
 # 環境に応じたコマンドの定義
 ifeq ($(IN_DEVCONTAINER),1)
     # Dev Container 内での実行コマンド
     DOCKER_PREFIX =
-    CD_PREFIX = cd /workspace &&
+    WORKSPACE_DIR = .
 else
     # Docker Compose 経由での実行コマンド
     DOCKER_PREFIX = docker compose exec -T latex
-    CD_PREFIX = bash -c cd /workspace &&
+    WORKSPACE_DIR = /workspace
 endif
 
 # 共通のコマンドを定義
-LATEX_CMD       = $(DOCKER_PREFIX) $(CD_PREFIX) TEXINPUTS=./src//: LANG=ja_JP.UTF-8 LC_ALL=ja_JP.UTF-8 latexmk -pdfdvi
-LATEX_CLEAN     = $(DOCKER_PREFIX) $(CD_PREFIX) latexmk -c
-LATEX_CLEAN_ALL = $(DOCKER_PREFIX) $(CD_PREFIX) latexmk -C
-CP_CMD          = $(DOCKER_PREFIX) $(CD_PREFIX) cp
-RM_CMD          = $(DOCKER_PREFIX) $(CD_PREFIX) rm -rf
-
-# エンコーディング別コンパイルコマンド
-UTF8_COMPILE    = $(DOCKER_PREFIX) bash -c "cd /workspace/src/IPSJ/UTF8 && TEXINPUTS=.:../../../src//: LANG=ja_JP.UTF-8 LC_ALL=ja_JP.UTF-8 uplatex -interaction=nonstopmode"
-SJIS_COMPILE    = $(DOCKER_PREFIX) bash -c "cd /workspace/src/IPSJ/SJIS && TEXINPUTS=.:../../../src//: LANG=ja_JP.SJIS LC_ALL=ja_JP.SJIS platex -interaction=nonstopmode"
-DVI_TO_PDF_UTF8 = $(DOCKER_PREFIX) bash -c "cd /workspace/src/IPSJ/UTF8 && dvipdfmx -o ../../../build"
-DVI_TO_PDF_SJIS = $(DOCKER_PREFIX) bash -c "cd /workspace/src/IPSJ/SJIS && dvipdfmx -o ../../../build"
+LATEX_CMD       = $(DOCKER_PREFIX) bash -c "cd $(WORKSPACE_DIR) && LANG=ja_JP.UTF-8 LC_ALL=ja_JP.UTF-8 latexmk -pdfdvi -outdir=build $(MAIN_TEX)"
+LATEX_CLEAN     = $(DOCKER_PREFIX) bash -c "cd $(WORKSPACE_DIR) && latexmk -c -outdir=build $(MAIN_TEX)"
+LATEX_CLEAN_ALL = $(DOCKER_PREFIX) bash -c "cd $(WORKSPACE_DIR) && latexmk -C -outdir=build $(MAIN_TEX)"
 
 # ファイル監視スクリプト（全環境対応）
-WATCH_CMD       = $(DOCKER_PREFIX) bash -c "sed -i 's/\r$$//' /workspace/scripts/watch.sh && bash /workspace/scripts/watch.sh"
+WATCH_CMD       = $(DOCKER_PREFIX) bash -c "sed -i 's/\r$$//' $(WORKSPACE_DIR)/scripts/watch.sh && bash $(WORKSPACE_DIR)/scripts/watch.sh"
 
-# デフォルトターゲット - 初回コンパイル後、自動監視開始
-all: ## すべての TeX ファイルを PDF に変換し、監視開始
-	$(call kill_existing_make_processes)
-	@$(MAKE) compile-all
-	@$(MAKE) watch
+# デフォルトターゲット - paper.pdf をコンパイル後、chapters/ を監視
+all: paper.pdf watch-chapters
 
-# 初回コンパイル（監視なし）
-compile-all: $(PDF_FILES) ## すべての TeX ファイルを PDF に変換（監視なし）
-	@if [ -n "$(TEX_FILES)" ]; then \
-		echo "初回コンパイル完了。"; \
-	else \
-		echo "[WARNING] src/ ディレクトリに .tex ファイルが見つかりません。"; \
-		exit 1; \
-	fi
-
-# デフォルト：初回コンパイル後、監視開始
-default: ## 初回コンパイル後、ファイル監視開始
-	$(call kill_existing_make_processes)
-	@$(MAKE) compile-all
-	@$(MAKE) watch
-
-.DEFAULT_GOAL := default
+.DEFAULT_GOAL := all
 
 help: ## ヘルプを表示
 	@echo "利用可能なコマンド:"
@@ -82,63 +56,27 @@ help: ## ヘルプを表示
 kill-make: ## 既存のmakeプロセスを強制終了
 	$(call kill_existing_make_processes)
 
-# ヘルパー関数: ファイルタイプを判定
-define get_file_type
-$(if $(findstring UTF8/,$(1)),UTF8,$(if $(findstring SJIS/,$(1)),SJIS,NORMAL))
-endef
-
-# ヘルパー関数: エンコーディング別コンパイル（統一版）
-define compile_by_encoding
-$(if $(filter UTF8,$(call get_file_type,$(1))),\
-	echo "UTF8ファイルを多重コンパイル: $(1)" && $(DOCKER_PREFIX) bash /workspace/scripts/full-compile.sh $(notdir $(basename $(1))) UTF8 || true,\
-	$(if $(filter SJIS,$(call get_file_type,$(1))),\
-		echo "SJISファイルを多重コンパイル: $(1)" && $(DOCKER_PREFIX) bash /workspace/scripts/full-compile.sh $(notdir $(basename $(1))) SJIS || true,\
-		echo "通常ファイルをコンパイル: $(1)" && $(DOCKER_PREFIX) bash -c "cd /workspace && TEXINPUTS=./src//: latexmk -pdfdvi $(1)" || true\
-	)\
-)
-endef
-
-# ファイル別の PDF ビルドルール（エンコーディング対応）
-pdf/%.pdf: src/%.tex
-	@mkdir -p pdf build $(dir $@)
-	@echo "$(call get_file_type,$<)ファイルをコンパイル: $<"
-	@$(call compile_by_encoding,$<)
-	@$(CP_CMD) build/$(notdir $(basename $<)).pdf $@ || true
-
 # LaTeX 関連コマンド
-compile: ## src 下の .tex ファイルをコンパイル（エンコーディング対応）
-	@mkdir -p pdf build
-	@for tex in $(TEX_FILES); do \
-		echo "コンパイル: $$tex"; \
-		rel_path=$$(echo "$$tex" | sed 's|^src/||'); \
-		pdf_dir=pdf/$$(dirname "$$rel_path"); \
-		mkdir -p "$$pdf_dir"; \
-		echo "$(call get_file_type,$$tex)ファイルをコンパイル: $$tex"; \
-		$(call compile_by_encoding,$$tex); \
-		pdf_name=$$(echo "$$rel_path" | sed 's/\.tex$$/\.pdf/'); \
-		$(CP_CMD) build/$$(basename $${tex%.tex}).pdf "pdf/$$pdf_name" || true; \
-	done
-	@echo "コンパイル完了"
+paper.pdf: ## paper.tex をコンパイルし、paper.pdf を生成
+	@mkdir -p build
+	@echo "Compiling $(MAIN_TEX)..."
+	@$(LATEX_CMD)
+	@$(DOCKER_PREFIX) bash -c "cd $(WORKSPACE_DIR) && if [ -f build/$(OUTPUT_PDF) ]; then cp build/$(OUTPUT_PDF) $(OUTPUT_PDF) && echo 'PDF copied to root: $(OUTPUT_PDF)'; fi"
 
-watch: ## ファイル変更を監視してコンパイル（全環境対応）
+watch-chapters: ## chapters/ 内のファイル変更を監視してコンパイル
 	$(call kill_existing_make_processes)
-	@mkdir -p pdf build
-	@echo "watching: src/**/*.tex (auto-detecting best method for your environment)"
+	@mkdir -p build
+	@echo "watching: chapters/**/*.tex (auto-detecting best method for your environment)"
 	@trap 'rm -f .make.pid; exit' INT TERM; $(WATCH_CMD)
 
 clean: ## LaTeX 中間ファイルを削除
-	@for tex in $(TEX_FILES); do \
-		echo "中間ファイル削除中: $$tex"; \
-		$(LATEX_CLEAN) $$tex; \
-	done
-	$(RM_CMD) pdf/*
+	@echo "中間ファイル削除中..."
+	@$(LATEX_CLEAN)
 
 clean-all: ## すべての LaTeX 生成ファイルを削除
-	@for tex in $(TEX_FILES); do \
-		echo "生成ファイル完全削除中: $$tex"; \
-		$(LATEX_CLEAN_ALL) $$tex; \
-	done
-	$(RM_CMD) pdf/* build/*
+	@echo "生成ファイル完全削除中..."
+	@$(LATEX_CLEAN_ALL)
+	@$(DOCKER_PREFIX) rm -rf build/*
 
 # ヘルパー関数: Docker環境チェック
 define check_docker_env
@@ -187,14 +125,14 @@ logs: ## コンテナのログを表示
 
 # 開発用コマンド
 setup: ## 初回セットアップ (ビルド + 起動)
-	$(call show_env_message,make setup による初回セットアップ,make build up && echo "環境構築を完了しました。以下のコマンドでコンパイルできます:" && echo "  make compile  # src 下の .tex ファイルをコンパイル" && echo "  make watch   # ファイルの変更を監視してコンパイル")
+	$(call show_env_message,make setup による初回セットアップ,make build up && echo "環境構築を完了しました。以下のコマンドでコンパイルできます:" && echo "  make paper.pdf      # paper.tex をコンパイル" && echo "  make watch-chapters # chapters/ の変更を監視してコンパイル")
 
-dev: ## 開発モード (起動 + 監視コンパイル)
+dev: ## 開発モード (起動 + chapters 監視コンパイル)
 	@if [ "$(IN_DEVCONTAINER)" = "1" ]; then \
-		echo "[WARNING] Dev Container 環境では make up は不要です。make watch を実行します"; \
-		make watch; \
+		echo "[WARNING] Dev Container 環境では make up は不要です。make watch-chapters を実行します"; \
+		make watch-chapters; \
 	else \
-		make up watch; \
+		make up watch-chapters; \
 	fi
 
 restart: ## コンテナを再起動
@@ -207,8 +145,8 @@ rebuild: ## 完全に再ビルド
 
 # ファイル操作
 open-pdf: ## 生成されたPDFを開く（Mac用）
-	@if [ -f build/sample.pdf ]; then \
-		open build/sample.pdf; \
+	@if [ -f $(OUTPUT_PDF) ]; then \
+		open $(OUTPUT_PDF); \
 	else \
-		echo "PDFファイルが見つかりません。先に make compile を実行してください。"; \
+		echo "PDFファイルが見つかりません。先に make paper.pdf を実行してください。"; \
 	fi

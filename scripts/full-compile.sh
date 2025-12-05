@@ -1,13 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# Full compilation script for LaTeX + BibTeX
-# Usage: ./full-compile.sh <tex-file-without-extension>
+# Full compilation script for LaTeX + BibTeX (paper.tex)
+# Usage: ./full-compile.sh [--retry]
 #
 # This script performs a complete LaTeX compilation including:
 # - Multiple LaTeX passes for cross-references
 # - pBibTeX for bibliography processing
 # - DVI to PDF conversion
+# - Automatic retry with cleanup on failure
 
 # Logging functions
 log_info() {
@@ -33,63 +34,47 @@ cleanup_on_exit() {
 
 trap cleanup_on_exit EXIT
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
-    log_error "Invalid number of arguments"
-    echo "Usage: $0 <tex-file-without-extension> [encoding]"
-    echo "Example: $0 jsample UTF8"
-    echo "Example: $0 jsample SJIS"
-    echo "Encoding options: UTF8, SJIS (default: UTF8)"
-    exit 1
+# Configuration
+TEX_BASE="paper"
+MAIN_TEX="${TEX_BASE}.tex"
+RETRY_MODE=false
+
+# Parse arguments
+if [[ $# -gt 0 && "$1" == "--retry" ]]; then
+    RETRY_MODE=true
 fi
 
-TEX_BASE="$1"
-ENCODING="${2:-UTF8}"  # デフォルトはUTF8
-WORKSPACE="/workspace"
-
-# エンコーディング別の設定
-case "$ENCODING" in
-    "UTF8")
-        SOURCE_DIR="src/IPSJ/UTF8"
-        COMPILER="platex"
-        LANG_ENV="LANG=ja_JP.UTF-8 LC_ALL=ja_JP.UTF-8"
-        ;;
-    "SJIS")
-        SOURCE_DIR="src/IPSJ/SJIS"
-        COMPILER="platex"
-        LANG_ENV="LANG=ja_JP.SJIS LC_ALL=ja_JP.SJIS"
-        ;;
-    *)
-        log_error "Unsupported encoding: $ENCODING"
-        echo "Supported encodings: UTF8, SJIS"
-        exit 1
-        ;;
-esac
-
-# Check if we're inside Docker
-if [[ ! -f /.dockerenv ]]; then
-    log_error "This script must be run inside the Docker container"
-    exit 1
+# Determine workspace directory
+if [[ -f /.dockerenv ]]; then
+    WORKSPACE="/workspace"
+else
+    WORKSPACE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 
 cd "$WORKSPACE"
 
-log_info "=== Full compilation of $TEX_BASE (encoding: $ENCODING) ==="
+log_info "=== Full compilation of ${MAIN_TEX} ==="
 
-# Step 1: Clean all intermediate files
-log_info "Step 1: Cleaning intermediate files..."
-rm -f "build/${TEX_BASE}."* "${SOURCE_DIR}/${TEX_BASE}.aux" "${SOURCE_DIR}/${TEX_BASE}.bbl" 2>/dev/null || true
+# Step 1: Clean all intermediate files if retry mode
+if [[ "$RETRY_MODE" == true ]]; then
+    log_info "Step 1: Cleaning all files for retry..."
+    latexmk -C "$MAIN_TEX"
+    rm -rf build/*
+fi
+
+# Ensure build directory exists
+mkdir -p build
 
 # Step 2: First LaTeX compilation
 log_info "Step 2: First LaTeX compilation..."
-cd "$SOURCE_DIR"
-if ! eval "$LANG_ENV $COMPILER -output-directory=../../../build -interaction=nonstopmode '${TEX_BASE}.tex'" > /dev/null 2>&1; then
+if ! LANG=ja_JP.UTF-8 LC_ALL=ja_JP.UTF-8 uplatex -output-directory=build -interaction=nonstopmode "$MAIN_TEX" > /dev/null 2>&1; then
     log_warn "First LaTeX compilation had warnings/errors (continuing)"
 fi
 
 # Check for cross-references and citations
 check_references() {
-    local aux_file="../../../build/${TEX_BASE}.aux"
-    local log_file="../../../build/${TEX_BASE}.log"
+    local aux_file="build/${TEX_BASE}.aux"
+    local log_file="build/${TEX_BASE}.log"
 
     # Check for undefined references
     if [[ -f "$log_file" ]] && grep -q "LaTeX Warning.*undefined" "$log_file"; then
@@ -112,27 +97,24 @@ check_references() {
 # Step 3: Check if bibliography is needed and handle multiple compilations
 # Wait a moment for aux file to be fully written
 sleep 1
-if grep -q "\\\\bibdata\\|\\\\citation" "../../../build/${TEX_BASE}.aux" 2>/dev/null; then
+if grep -q "\\\\bibdata\\|\\\\citation" "build/${TEX_BASE}.aux" 2>/dev/null; then
     log_info "Step 3: Running pBibTeX..."
-    cd ../../../build
+    cd build
 
-    # Copy necessary files
-    cp "../${SOURCE_DIR}"/*.bib . 2>/dev/null || log_warn "No .bib files found"
-    cp "../${SOURCE_DIR}"/*.bst . 2>/dev/null || log_warn "No .bst files found"
+    # Copy necessary files from root
+    cp ../*.bib . 2>/dev/null || log_warn "No .bib files found"
+    cp ../*.bst . 2>/dev/null || log_warn "No .bst files found"
 
     # Run pBibTeX with verbose output for debugging
     if pbibtex "$TEX_BASE"; then
         log_info "pBibTeX completed successfully"
-        # Copy .bbl file back to source directory
-        cp "${TEX_BASE}.bbl" "../${SOURCE_DIR}/" 2>/dev/null || log_warn "Failed to copy .bbl file"
     else
         log_warn "pBibTeX failed, continuing without bibliography"
     fi
 
-    cd "$WORKSPACE/$SOURCE_DIR"
+    cd "$WORKSPACE"
 else
     log_info "No bibliography found, skipping pBibTeX"
-    cd "$WORKSPACE/$SOURCE_DIR"
 fi
 
 # Step 4-N: Compile until all references are resolved
@@ -142,7 +124,7 @@ max_compiles=10
 
 while [[ $compile_count -le $max_compiles ]]; do
     log_info "LaTeX compilation #${compile_count}..."
-    if ! eval "$LANG_ENV $COMPILER -output-directory=../../../build -interaction=nonstopmode '${TEX_BASE}.tex'" > /dev/null 2>&1; then
+    if ! LANG=ja_JP.UTF-8 LC_ALL=ja_JP.UTF-8 uplatex -output-directory=build -interaction=nonstopmode "$MAIN_TEX" > /dev/null 2>&1; then
         log_warn "LaTeX compilation #${compile_count} had warnings/errors (continuing)"
     fi
 
@@ -162,8 +144,8 @@ done
 # Step 5: Copy images to build directory
 log_info "Step 5: Copying images to build directory..."
 cd "$WORKSPACE/build"
-if [[ -d "../${SOURCE_DIR}/images" ]]; then
-    cp -r "../${SOURCE_DIR}/images" . 2>/dev/null || log_warn "Failed to copy images directory"
+if [[ -d "../images" ]]; then
+    cp -r ../images . 2>/dev/null || log_warn "Failed to copy images directory"
     log_info "Images copied successfully"
 else
     log_warn "No images directory found"
@@ -174,16 +156,14 @@ log_info "Step 6: Generating PDF..."
 if [[ -f "${TEX_BASE}.dvi" ]]; then
     if dvipdfmx "${TEX_BASE}.dvi" 2>/dev/null || [[ -f "${TEX_BASE}.pdf" ]]; then
         log_info "PDF generation successful"
-        
-        # Copy PDF to output directory
-        PDF_OUTPUT_DIR="../pdf/IPSJ/${ENCODING}"
-        mkdir -p "$PDF_OUTPUT_DIR"
-        if cp "${TEX_BASE}.pdf" "$PDF_OUTPUT_DIR/" 2>/dev/null; then
+
+        # Copy PDF to root directory
+        if cp "${TEX_BASE}.pdf" ../ 2>/dev/null; then
             log_info "=== Compilation completed successfully ==="
-            log_info "PDF: pdf/IPSJ/${ENCODING}/${TEX_BASE}.pdf"
-            ls -la "$PDF_OUTPUT_DIR/${TEX_BASE}.pdf" 2>/dev/null || log_warn "PDF file not found in final location"
+            log_info "PDF: ${TEX_BASE}.pdf"
+            ls -la "../${TEX_BASE}.pdf" 2>/dev/null || log_warn "PDF file not found in root directory"
         else
-            log_error "Failed to copy PDF to output directory"
+            log_error "Failed to copy PDF to root directory"
             exit 1
         fi
     else
