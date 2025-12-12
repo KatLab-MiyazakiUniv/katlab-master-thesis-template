@@ -51,23 +51,30 @@
 \usepackage[dvipdfmx]{graphicx, color} % 当然dvipdfmなんて使ってないよね
 % \usepackage[dvipdfmx]{color}    % listingsを使うときにはこれも必須、dvipdfmxを変えちゃうとgraphicxのdvipdfmxも変わるよ
 \usepackage{listings, jvlisting} % コードを埋め込むなら必須、jvlistingは日本語対応
-%\usepackage{txfonts}            % フォントといえばやっぱりtxfonts、今はnewtxってのもあるらしい（amsmathと競合するためコメントアウト）
 \usepackage{amsmath}            % 数式環境（align等）を使うために必須
+\usepackage{txfonts}            % フォントといえばやっぱりtxfonts、今はnewtxってのもあるらしい（amsmathと競合するためコメントアウト）
 \usepackage{multirow}           % 表で複数行をまとめるために必須
+\usepackage{url}                % URLを表示するために必要
 \usepackage{verbatim}           % コメントアウトしてくれる便利なプリアンブルが使える \begin{comment} ... \end{comment}
-\usepackage[hdivide={21mm, , 21mm}, vdivide={30mm, , 25mm}]{geometry} % スタイルを少し変えたくても\hoffset, \voffsetは使わないでね
-\usepackage[dvipdfmx]{hyperref} % リンクを付けてくれる。
-\usepackage{pxjahyper}          % リンクを付けてくれる（日本語）
 \usepackage[htt]{hyphenat}      % textttをハイフネーションしてくれる。
+\usepackage[hdivide={21mm, , 21mm}, vdivide={30mm, , 25mm}]{geometry} % スタイルを少し変えたくても\hoffset, \voffsetは使わないでね
+\usepackage[dvipdfmx, hidelinks]{hyperref} % リンクを付けてくれる。
+\usepackage{pxjahyper}          % リンクを付けてくれる（日本語）
 %\RequirePackage[l2tabu, orthodox]{nag} % これを入れると、古いコマンドを警告してくれる！なお完全には消せなかった模様
 
-%%
-% font周りのwarningを消す。
-% https://www.semipol.de/2018/06/12/latex-best-practices.html#filtering-warnings
-%
-\usepackage{silence}% http://ctan.org/pkg/silence
-\WarningFilter{latexfont}{Font shape}
-\WarningFilter{latexfont}{Some font shapes}
+\lstset{
+  breaklines = true,%自動で折り返す
+  basicstyle={\footnotesize\ttfamily},
+  numberstyle={\scriptsize},
+  stepnumber=1,
+  numbersep=1zw,
+  lineskip=-0.5ex,
+  frame=single,
+  numbers=left,%行番号を左に
+  framexleftmargin=6mm,%行番号をフレーム内に
+  numberstyle=\scriptsize,%行番号のサイズ
+  stepnumber=1%1行おきに行番号を
+}
 
 
 %
