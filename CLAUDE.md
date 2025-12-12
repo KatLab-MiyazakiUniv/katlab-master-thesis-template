@@ -67,7 +67,7 @@ The script:
 
 **Manual sync method:**
 ```bash
-git remote add template https://github.com/KatLab-MiyazakiUniv/katlab_master_thesis_template.git
+git remote add template https://github.com/KatLab-MiyazakiUniv/katlab-master-thesis-template.git
 git fetch template
 git merge template/main --allow-unrelated-histories
 ```
