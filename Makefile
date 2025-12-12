@@ -64,7 +64,7 @@ all: ## paper.tex をコンパイル後、chapters/ を監視
 	@echo "初回コンパイル完了。監視モードを開始します..."
 	@echo "終了するには Ctrl+C を押してください"
 	@echo ""
-	@echo "watching: chapters/**/*.tex (auto-detecting best method for your environment)"
+	@echo "watching: paper.tex, chapters/**/*.tex, paper.bib (auto-detecting best method for your environment)"
 	@$(WATCH_CMD)
 
 .DEFAULT_GOAL := all
@@ -86,7 +86,7 @@ paper.pdf: ## paper.tex をコンパイルし、paper.pdf を生成
 watch-chapters: ## chapters/ 内のファイル変更を監視してコンパイル
 	$(call kill_watch_processes)
 	@mkdir -p build
-	@echo "watching: chapters/**/*.tex (auto-detecting best method for your environment)"
+	@echo "watching: paper.tex, chapters/**/*.tex, paper.bib (auto-detecting best method for your environment)"
 	@$(WATCH_CMD)
 
 clean: ## LaTeX 中間ファイルを削除

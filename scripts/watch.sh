@@ -93,7 +93,7 @@ echo $$ > "$PID_FILE"
 log_info "Watch process started (PID: $$)"
 
 log_info "Using polling method for Docker mount compatibility"
-log_info "Watching: ${WATCH_DIR}/**/*.tex"
+log_info "Watching: ${MAIN_TEX}, ${WATCH_DIR}/**/*.tex, paper.bib"
 
 # Ensure build directory exists
 mkdir -p "$BUILD_DIR"
@@ -101,11 +101,17 @@ mkdir -p "$BUILD_DIR"
 # ポーリング監視
 declare -A file_times
 
-# 初期ファイル時刻を記録 (chapters/ と paper.bib)
+# 初期ファイル時刻を記録 (chapters/ と paper.tex と paper.bib)
 while IFS= read -r -d '' file; do
   file_times["$file"]=$(stat -c %Y "$file" 2>/dev/null || stat -f %m "$file")
   log_info "Tracking: $file"
 done < <(find "$WATCH_DIR" -name "*.tex" -type f -print0 2>/dev/null)
+
+# paper.tex も監視対象に追加
+if [[ -f "$MAIN_TEX" ]]; then
+  file_times["$MAIN_TEX"]=$(stat -c %Y "$MAIN_TEX" 2>/dev/null || stat -f %m "$MAIN_TEX")
+  log_info "Tracking: $MAIN_TEX"
+fi
 
 # paper.bib も監視対象に追加
 if [[ -f "paper.bib" ]]; then
@@ -148,6 +154,32 @@ while true; do
       compilation_in_progress=0
     fi
   done < <(find "$WATCH_DIR" -name "*.tex" -type f -print0 2>/dev/null)
+
+  # paper.tex の変更を監視
+  if [[ -f "$MAIN_TEX" ]]; then
+    current=$(stat -c %Y "$MAIN_TEX" 2>/dev/null || stat -f %m "$MAIN_TEX")
+    if [[ "${file_times[$MAIN_TEX]:-}" != "$current" ]]; then
+      # コンパイル進行中の場合はスキップ
+      if [[ "$compilation_in_progress" == "1" ]]; then
+        log_debug "Skipping compilation (already in progress)"
+        file_times["$MAIN_TEX"]=$current
+      else
+        file_times["$MAIN_TEX"]=$current
+        log_info "Change detected in: $MAIN_TEX"
+
+        # コンパイル開始フラグを設定
+        compilation_in_progress=1
+
+        # 短い待機時間で複数変更をまとめる
+        sleep 0.5
+
+        compile_paper
+
+        # コンパイル完了フラグをリセット
+        compilation_in_progress=0
+      fi
+    fi
+  fi
 
   # paper.bib の変更を監視
   if [[ -f "paper.bib" ]]; then
